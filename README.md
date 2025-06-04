@@ -1,1 +1,3 @@
 # Module_3_Activities
+
+This code module introduces students to multimodal sensing and has them identify when it is useful in the real world. Students will identify common examples of multimodal sensor feedback that they interact with frequently to appreciate the impacts these inputs have on their daily lives. Students will learn to collect data using various sensors on the AHA board and understand the application. A hands-on activity will explore scenarios where multiple sensors are necessary to solve a relevant problem. Discussions will address the comparison of sensor-based detection to human multimodal sensing.

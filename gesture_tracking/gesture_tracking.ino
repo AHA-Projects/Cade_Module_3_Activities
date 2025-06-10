@@ -30,6 +30,7 @@
 #define BLACK   0x0000  // 
 #define WHITE   0xFFFF  
 #define GREEN   0x07E0  
+#define RED     0xF800
 
 // --- Create our sensor and screen objects ---
 Adafruit_APDS9960 apds; // This is our gesture sensor object.
@@ -97,7 +98,7 @@ void loop() {
   // 'apds.readGesture()' will return a number that tells us the gesture.
   uint8_t gesture = apds.readGesture();
 
-  if (gesture == APDS9960_NONE || gesture == last_gesture_shown) {
+    if (gesture == 0) {
     return; // Nothing new to show, so skip the rest.
   }
 

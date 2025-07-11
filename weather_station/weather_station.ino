@@ -1,104 +1,148 @@
-#include <GyverOLED.h>
-GyverOLED<SSH1106_128x64> oled; // Ensure this matches your OLED model
+// Acknowledgments
 
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-#include <Wire.h>
+// Creator: Anany Sharma at the University of Florida working under NSF grant. 2405373
 
-Adafruit_MPU6050 mpu;
+// This material is based upon work supported by the National Science Foundation under Grant No. 2405373. 
+// Any opinions, findings, and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect the views of the National Science Foundation.
 
-const float STILL_THRESHOLD_LOW = 9.0;
-const float STILL_THRESHOLD_HIGH = 10.5;
 
-// Debounce counters
-const int DEBOUNCE_COUNT_MOVING = 5; // How many consecutive 'moving' readings to confirm motion
-const int DEBOUNCE_COUNT_STILL = 10; // How many consecutive 'still' readings to confirm stillness
 
-int movingCounter = 0;
-int stillCounter = 0;
+// --- Original Libraries ---
+#include <Wire.h>             
+#include <SPI.h>              
+#include <Adafruit_Sensor.h>  
+#include <Adafruit_BME280.h>  
 
-void setup(void) {
-  Serial.begin(115200);
-  while (!Serial) delay(10);
+// --- Libraries for the TFT Display ---
+#include <Adafruit_GFX.h>     
+#include <Adafruit_ST7789.h>  
 
-  oled.init(); oled.clear(); oled.home(); oled.print("Starting MPU6050..."); oled.update(); delay(500);
-  Serial.println("Adafruit MPU6050 test!");
+// --- Screen Pin Definitions (for ST7789 TFT Display) ---
 
-  if (!mpu.begin()) {
-    Serial.println("Failed to find MPU6050 chip");
-    oled.clear(); oled.home(); oled.print("MPU6050 Init Failed!"); oled.update(); while (1) delay(10);
-  }
-  Serial.println("MPU6050 Found!");
-  oled.clear(); oled.home(); oled.print("MPU6050 Found!"); oled.update(); delay(1000);
+#define TFT_CS    33  // TFT Chip Select pin
+#define TFT_DC    25  // TFT Data/Command pin
+#define TFT_RST   26  // TFT Reset pin (can be -1 if not used and tied to Arduino RST)
 
-  Serial.println("MPU6050 initialized for magnitude detection.");
-  oled.clear(); oled.home(); oled.print("Ready for motion!"); oled.update(); delay(1000);
+// --- Constants ---
+#define SEALEVELPRESSURE_HPA (1013.25) // Standard atmospheric pressure at sea level, for altitude calculation
 
-  oled.clear(); oled.home(); oled.setScale(2); oled.print("Still"); oled.update();
-  Serial.println("Initial state: Still");
+// --- Color Definitions for TFT Display ---
+// Easy names for colors the screen understands.
+#define BLACK     0x0000  // No color
+#define WHITE     0xFFFF  // All colors
+#define RED       0xF800  // Red color for errors or temperature
+#define ORANGE    0xFD20  // An orange color, good for temperature
+#define CYAN      0x07FF  // A cyan (light blue) color, good for humidity
+
+// --- Create our sensor and screen objects ---
+Adafruit_BME280 bme; // Creates the BME280 sensor object using I2C communication (default)
+
+Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); // Creates the screen object
+
+unsigned long delayTime; // How long to wait between readings (in milliseconds)
+
+void setup() {
+    Serial.begin(9600);    // Starts talking to your computer's Serial Monitor.
+    while (!Serial && millis() < 3000) ; // Wait a bit for Serial to connect (especially for some Arduinos).
+                                      // The millis() < 3000 is a timeout so it doesn't hang forever.
+    Serial.println(F("BME280 Test with TFT Display")); // F() saves memory on some Arduinos.
+
+    // --- Initialize the TFT Display ---
+    // For a 1.9" 170x320 TFT. If your screen is different, these numbers might change.
+    tft.init(170, 320);     // Tell the screen to get ready.
+    Serial.println(F("TFT Initialized"));
+    tft.setRotation(3);     // Rotate screen (often 3 for landscape: 320 wide, 170 tall).
+    tft.fillScreen(BLACK);  // Make the whole screen black.
+
+    // --- Initialize the BME280 Sensor ---
+    unsigned status;
+    status = bme.begin(); // Try to start the sensor
+    
+    if (!status) {
+        Serial.println(F("Could not find a valid BME280 sensor, check wiring, address, sensor ID!"));
+        Serial.print(F("SensorID was: 0x")); Serial.println(bme.sensorID(), 16);
+        Serial.print(F("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n"));
+        Serial.print(F("   ID of 0x56-0x58 represents a BMP 280,\n"));
+        Serial.print(F("        ID of 0x60 represents a BME 280.\n"));
+        Serial.print(F("        ID of 0x61 represents a BME 680.\n"));
+
+        // Show error on TFT screen too
+        tft.setTextSize(2);
+        tft.setTextColor(RED);
+        tft.setCursor(10, 10);
+        tft.println(F("BME280 Sensor Error!"));
+        tft.setCursor(10, 35);
+        tft.println(F("Check wiring & I2C Addr."));
+        tft.setCursor(10, 60);
+        tft.println(F("Halting."));
+        
+        while (1) delay(10); // Stop everything if sensor not found.
+    }
+    
+    Serial.println(F("-- Weather Station --"));
+    delayTime = 1000; // Set delay between readings to 1 second (1000 milliseconds).
+
+    // --- Draw Static Labels on TFT ---
+    // These labels will stay on the screen.
+    tft.setTextSize(3);             // Set a medium-large text size for labels.
+    tft.setTextColor(WHITE);        // Use white color for labels.
+    
+    // Label for Temperature
+    tft.setCursor(10, 30);          // Position for "TEMP:" text (x=10, y=30)
+    tft.print(F("TEMP:"));
+    
+    // Label for Humidity
+    tft.setCursor(10, 100);         // Position for "HUMI:" text (x=10, y=100)
+    tft.print(F("HUMI:"));
+
+    Serial.println();
 }
 
-void loop() {
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
 
-  float accelMagnitude = sqrt(
-    (a.acceleration.x * a.acceleration.x) +
-    (a.acceleration.y * a.acceleration.y) +
-    (a.acceleration.z * a.acceleration.z)
-  );
+void loop() { 
+    // --- Read Sensor Values ---
+    float temperature = bme.readTemperature();      // Get temperature in Celsius
+    float humidity = bme.readHumidity();            // Get humidity in %
+    float pressure = bme.readPressure() / 100.0F;   // Get pressure in hPa
+    float altitude = bme.readAltitude(SEALEVELPRESSURE_HPA); // Get altitude in meters
 
-  bool rawMotionDetected = (accelMagnitude < STILL_THRESHOLD_LOW || accelMagnitude > STILL_THRESHOLD_HIGH);
+    // --- Print All Values to Serial Monitor for debugging ---
+    Serial.print(F("Temperature = "));
+    Serial.print(temperature);
+    Serial.println(F(" °C"));
 
-  // Debouncing logic
-  if (rawMotionDetected) {
-    movingCounter++;
-    stillCounter = 0; // Reset still counter
-  } else {
-    stillCounter++;
-    movingCounter = 0; // Reset moving counter
-  }
+    Serial.print(F("Pressure = "));
+    Serial.print(pressure);
+    Serial.println(F(" hPa"));
 
-  static bool wasMoving = false; // Tracks the previous state for OLED/Serial updates
-  bool currentStateMoving; // Current determined state
+    Serial.print(F("Approx. Altitude = "));
+    Serial.print(altitude);
+    Serial.println(F(" m"));
 
-  if (movingCounter >= DEBOUNCE_COUNT_MOVING) {
-    currentStateMoving = true;
-  } else if (stillCounter >= DEBOUNCE_COUNT_STILL) {
-    currentStateMoving = false;
-  } else {
-    currentStateMoving = wasMoving; // Maintain previous state during debounce period
-  }
+    Serial.print(F("Humidity = "));
+    Serial.print(humidity);
+    Serial.println(F(" %"));
+    Serial.println();
 
-  if (currentStateMoving && !wasMoving) { // Transition from Still to Moving
-    oled.clear();
-    oled.home();
-    oled.setScale(2);
-    oled.print("Moving");
-    oled.update();
-    Serial.println("\n--- Motion Detected ---");
-    wasMoving = true;
-  } else if (!currentStateMoving && wasMoving) { // Transition from Moving to Still
-    oled.clear();
-    oled.home();
-    oled.setScale(2);
-    oled.print("Still");
-    oled.update();
-    Serial.println("\n--- Still ---");
-    wasMoving = false;
-  }
+    // --- Display Temperature on TFT ---
+    // Define area to clear for the temperature value to prevent old text overlap
+    // x, y, width, height, color
+    tft.fillRect(130, 20, 180, 40, BLACK); // Clear previous temp value
+    tft.setTextSize(4);                   // Use a large text size for the value
+    tft.setTextColor(ORANGE);             // Orange color for temperature
+    tft.setCursor(130, 25);               // Set cursor position for the value (right of "TEMP:")
+    tft.print(temperature, 1);            // Print temperature with 1 decimal place
+    tft.write(247);                       // This prints the degree symbol: °
+    tft.print(F("C"));                    // Print "C" for Celsius
 
-  // Print sensor data only if currently in the 'Moving' state
-  if (currentStateMoving) {
-    Serial.print("AccelX:"); Serial.print(a.acceleration.x, 2);
-    Serial.print(", AccelY:"); Serial.print(a.acceleration.y, 2);
-    Serial.print(", AccelZ:"); Serial.print(a.acceleration.z, 2);
-    Serial.print(" | Magnitude:"); Serial.print(accelMagnitude, 2);
-    Serial.print(" | GyroX:"); Serial.print(g.gyro.x, 2);
-    Serial.print(", GyroY:"); Serial.print(g.gyro.y, 2);
-    Serial.print(", GyroZ:"); Serial.print(g.gyro.z, 2);
-    Serial.println("");
-  }
+    // --- Display Humidity on TFT ---
+    // Define area to clear for the humidity value
+    tft.fillRect(130, 90, 180, 40, BLACK); // Clear previous humi value
+    tft.setTextSize(4);                   // Large text size for the value
+    tft.setTextColor(CYAN);               // Cyan (light blue) color for humidity
+    tft.setCursor(130, 95);               // Set cursor position for the value (right of "HUMI:")
+    tft.print(humidity, 1);               // Print humidity with 1 decimal place
+    tft.print(F(" %"));                   // Print "%" symbol
 
-  delay(600); // Reduced delay to allow more frequent sampling for debounce
+    delay(delayTime); // Wait for 'delayTime' (1 second) before the next reading.
 }

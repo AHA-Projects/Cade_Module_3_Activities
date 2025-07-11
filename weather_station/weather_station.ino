@@ -7,18 +7,20 @@
 
 
 
-// --- Original Libraries ---
-#include <Wire.h>             
-#include <SPI.h>              
-#include <Adafruit_Sensor.h>  
-#include <Adafruit_BME280.h>  
+// --- Original Libraries for BME280 Sensor ---
+#include <Wire.h>             // Needed for I2C communication (how the sensor talks to Arduino)
+#include <SPI.h>              // Needed if you were using SPI communication (another way to talk)
+#include <Adafruit_Sensor.h>  // Adafruit's basic sensor library
+#include <Adafruit_BME280.h>  // The specific library for our BME280 sensor
 
 // --- Libraries for the TFT Display ---
-#include <Adafruit_GFX.h>     
-#include <Adafruit_ST7789.h>  
+#include <Adafruit_GFX.h>     // Core graphics library - helps draw shapes and text
+#include <Adafruit_ST7789.h>  // Library for our ST7789 TFT screen
 
 // --- Screen Pin Definitions (for ST7789 TFT Display) ---
-
+// These lines tell the Arduino which pins are connected to the screen.
+// IMPORTANT: These pin numbers might be different for your specific Arduino board or wiring.
+// These are common for ESP32 boards.
 #define TFT_CS    33  // TFT Chip Select pin
 #define TFT_DC    25  // TFT Data/Command pin
 #define TFT_RST   26  // TFT Reset pin (can be -1 if not used and tied to Arduino RST)
@@ -55,8 +57,8 @@ void setup() {
     tft.fillScreen(BLACK);  // Make the whole screen black.
 
     // --- Initialize the BME280 Sensor ---
-    unsigned status;
-    status = bme.begin(); // Try to start the sensor
+    bool status;
+    status = bme.begin(0x76); // Try to start the sensor
     
     if (!status) {
         Serial.println(F("Could not find a valid BME280 sensor, check wiring, address, sensor ID!"));
